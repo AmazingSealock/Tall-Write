@@ -1,0 +1,20 @@
+>>> import requests
+>>> import json
+>>> url = "https://gpt-api.hkust-gz.edu.cn/v1/chat/completions"
+>>> headers = { 
+... "Content-Type": "application/json", 
+... "Authorization": "Bearer KEY" #Please change your KEY. If your key is XXX, the Authorization is "Authorization": "Bearer XXX"
+... }
+>>> data = { 
+... "model": "DeepSeek-R1-671B", # # "gpt-3.5-turbo" version in gpt-4o-mini, "gpt-4" version in gpt-4o-2024-08-06
+... "messages": [{"role": "user", "content": "This is a test."}], 
+... "temperature": 0.7 
+... }
+>>> response = requests.post(url, headers=headers, data=json.dumps(data))
+>>> print(response.json())
+
+
+---------------------------------------------------------------------------------
+#Demo of response
+{'id': 'ri8djed9f5-70bb-482f-abd2-c0598rji8dujr513', 'object': 'chat.completion', 'model': 'DeepSeek-R1-671B', 'created': '2025-02-17 14:45:43', 'choices': [{'index': 0, 'finish_reason': 'stop', 'message': {'role': 'assistant', 'content': "<think>\n\n</think>\n\nIt looks like your test was successful! Let me know if there's anything specific you'd like to try or discuss. 😊"}}], 'usage': {'completion_tokens': 31, 'prompt_tokens': 8, 'total_tokens': 39}, 'feeType': '0', 'consume': 0}
+

@@ -1,0 +1,530 @@
+<!doctype html>
+<!-- 
+该 HTML 文件实现了一个名为 ETalker 的双面板模式页面，主要功能如下：
+1. 左侧为聊天面板，用户可以输入消息并发送，消息以气泡形式显示，区分用户消息和系统消息。
+2. 聊天历史记录最多保留 5 条。
+3. 用户输入消息后，通过调用 DashScope API 获取回复，回复包括思考过程和最终答案，同时显示 Token 使用量。
+4. 右侧为文本编辑器面板，用户可以将左边最新回复写入编辑器，也可以在编辑器中写入指定内容，还能复制编辑器内容。
+5. 编辑器高度会根据窗口大小动态调整。
+-->
+<html>
+
+<head>
+    <!-- 页面标题 -->
+    <title>ETalker - 双面板模式</title>
+    <!-- 设置视口，确保页面在不同设备上有良好的显示效果 -->
+    <meta name="viewport" content="width=device-width, minimum-scale=0.5, maximum-scale=5, user-scalable=no">
+    <!-- 设置浏览器兼容性 -->
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <!-- 设置页面字符编码为UTF-8 -->
+    <meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+    <!-- UEditor 相关资源 -->
+    <script type="text/javascript" charset="utf-8" src="../ueditor.config.js"></script>
+    <script type="text/javascript" charset="utf-8" src="editor_api.js"></script>
+    <script type="text/javascript" charset="utf-8" src="../lang/zh-cn/zh-cn.js?{timestamp}"></script>
+    <style>
+        /* 设置所有元素的盒模型为border-box，方便布局 */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* 设置body高度为视口高度，使用flex布局，隐藏溢出内容 */
+        body {
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* 面板容器样式，每个面板占页面宽度的50%，使用flex列布局，设置内边距和背景颜色 */
+        .panel-container {
+            width: 50%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            background: #f5f5f5;
+            border-right: 2px solid #ddd;
+        }
+
+        /* 最后一个面板容器，去除右边框，设置背景颜色为白色 */
+        .panel-container:last-child {
+            border-right: none;
+            background: white;
+        }
+
+        /* 内容包装器样式，使用flex列布局，允许垂直滚动，设置顶部外边距 */
+        .content-wrapper {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+
+        /* 左侧聊天面板样式，设置内边距、背景颜色，使用flex列布局 */
+        .left-panel {
+            padding: 20px;
+            background: #f5f5f5;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* 聊天容器样式，允许垂直滚动，设置内边距、背景颜色和圆角 */
+        .chat-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            background: white;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        /* 编辑器包装器样式，隐藏溢出内容，设置边框和圆角，隐藏横向滚动条 */
+        .editor-wrapper {
+            flex: 1;
+            overflow: hidden;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background: white;
+            /* 隐藏横向滚动条 */
+            overflow-x: hidden; 
+        }
+
+        /* 消息气泡样式，设置最大宽度、外边距、内边距和圆角，允许单词换行 */
+        .message-bubble {
+            max-width: 70%;
+            margin: 10px;
+            padding: 12px 16px;
+            border-radius: 18px;
+            word-break: break-word;
+        }
+
+        /* 用户消息样式，设置背景颜色，右对齐 */
+        .user-message {
+            background: #9eea6a;
+            margin-left: auto;
+        }
+
+        /* 系统消息样式，设置背景颜色，左对齐 */
+        .system-message {
+            background: #e0f7fa;
+            margin-right: auto;
+        }
+
+        /* 消息时间戳样式（可删除），设置字体大小和颜色，设置顶部外边距 */
+        .message-timestamp {
+            font-size: 12px;
+            color: #999;
+            margin-top: 5px;
+        }
+
+        /* 输入区域样式，使用flex布局，设置间距和顶部边框 */
+        .input-area {
+            display: flex;
+            gap: 10px;
+            padding: 15px 0;
+            border-top: 1px solid #ddd;
+        }
+
+        /* 消息输入框样式，设置弹性增长，设置内边距、边框和圆角 */
+        #message-input {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 20px;
+        }
+
+        /* 发送按钮样式，设置内边距、背景颜色、文字颜色、去除边框、设置圆角和鼠标指针样式 */
+        #send-btn {
+            padding: 12px 24px;
+            background: #07c160;
+            color: white;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+        }
+
+        /* 右侧编辑器面板样式，设置内边距，使用flex列布局 */
+        .right-panel {
+            padding: 20px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* 编辑器样式，设置弹性增长，设置边框和圆角 */
+        #editor {
+            flex: 1;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        /* 新增样式：调整思考过程字体，设置标题字体大小和粗细 */
+        .thinking-process h2 {
+            font-size: 14px;
+            font-weight: 300;
+        }
+
+        /* 新增样式：调整思考过程字体，设置字体大小和粗细 */
+        .thinking-process {
+            font-size: 12px;
+            font-weight: 300;
+        }
+
+        /* 新增样式：调整Token使用量标题字体，设置标题字体大小和粗细 */
+        .token-usage h2 {
+            font-size: 14px;
+            font-weight: 300;
+        }
+    </style>
+    <!-- 自定义 UEditor 样式，减小段落间距 -->
+    <style type="text/css">
+        /* 调整UEditor中段落的上下间距 */
+        .edui-container .edui-body-container p {
+            margin: 5px 0; /* 调整段落上下间距 */
+        }
+    </style>
+</head>
+
+<body>
+    <!-- 左侧聊天面板 -->
+    <div class="panel-container">
+        <div class="content-wrapper">
+            <!-- 聊天容器，用于显示聊天消息 -->
+            <div class="chat-container" id="chat-container"></div>
+            <div class="input-area">
+                <!-- 消息输入框，设置占位符，绑定键盘按下事件 -->
+                <input type="text" id="message-input" placeholder="输入消息..." onkeydown="handleKeyDown(event)">
+                <!-- 发送按钮，绑定点击事件 -->
+                <button id="send-btn" onclick="sendMessage()">发送</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 右侧编辑器面板 -->
+    <div class="panel-container">
+        <div class="content-wrapper">
+            <!-- 编辑器标题 -->
+            <h2>文本编辑器</h2>
+            <!-- 编辑器容器 -->
+            <script id="editor" type="text/plain"></script>
+            <div id="btns">
+                <!-- 按钮，点击后将左边最新回复写入编辑器 -->
+                <button onclick="copyLatestSystemMessageToEditor()">将左边最新回复写入编辑器</button>
+                <!-- 按钮，点击后在编辑器中写入指定内容 -->
+                <button onclick="UE.getEditor('editor').setContent('在这里输入新内容')">写入内容</button>
+                <!-- 新增复制按钮 -->
+                <button onclick="copyEditorContent()">复制编辑器内容</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 初始化UEditor时设置自适应高度
+        function initEditorHeight() {
+            // 获取编辑器包装器元素
+            const editorWrapper = document.querySelector('.editor-wrapper');
+            // 计算编辑器的高度
+            const calcHeight = editorWrapper.offsetHeight - 20;
+
+            // 初始化UEditor，设置相关配置
+            const ue = UE.getEditor('editor', {
+                autoHeightEnabled: false,
+                initialFrameHeight: calcHeight,
+                enableAutoSize: false,
+                scrollbars: true,
+                wordWrap: true,
+                // 确保不允许横向滚动
+                overflowX: 'hidden' 
+            });
+
+            // 监听窗口大小变化事件，动态调整编辑器高度
+            window.addEventListener('resize', () => {
+                const newHeight = editorWrapper.offsetHeight - 20;
+                ue.setHeight(newHeight);
+                ue.setContent(ue.getContent());
+            });
+        }
+
+        // 在窗口完全加载后初始化
+        window.addEventListener('DOMContentLoaded', initEditorHeight);
+
+        // 存储聊天历史记录
+        let chatHistory = [];
+        // 标记是否正在等待答复
+        let isWaitingForResponse = false;
+
+        async function sendMessage() {
+            if (isWaitingForResponse) return;
+            const input = document.getElementById('message-input');
+            const message = input.value.trim();
+            if (!message) return;
+
+            addMessage(message, 'user');
+            // 将当前用户消息添加到聊天历史
+            chatHistory.push({ role: 'user', content: message });
+            // 确保聊天历史记录最多保留 5 条
+            if (chatHistory.length > 5) {
+                chatHistory.shift();
+            }
+
+            // 清空输入框
+            input.value = '';
+
+            // 设置为正在等待答复
+            isWaitingForResponse = true;
+
+            const apiKey = "sk-bdc7dee4010d43ddac42cc9c60c93a33";
+            const baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
+
+            // 构建包含上下文的请求体
+            const requestBody = {
+                "model": "deepseek-r1",
+                "messages": [
+                    ...chatHistory,
+                    {
+                        "role": "user",
+                        "content": `${message}\n请用自然段分段回复,不用空一行`
+                    }
+                ],
+                "stream": true,
+                "stream_options": {
+                    "include_usage": true
+                }
+            };
+
+            const response = await fetch(baseUrl, {
+                method: 'POST',
+                headers: {
+                    "Authorization": `Bearer ${apiKey}`,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(requestBody)
+            });
+
+
+            // 获取响应体的读取器
+            const reader = response.body.getReader();
+            // 创建文本解码器
+            const decoder = new TextDecoder();
+            // 存储思考过程内容
+            let reasoningContent = "";
+            // 存储回答内容
+            let answerContent = "";
+            // 标记是否正在回答
+            let isAnswering = false;
+            // 存储系统消息内容
+            let systemMessageContent = "";
+            // 标记是否已添加思考过程标题
+            let isReasoningHeaderAdded = false;
+            // 存储Token使用量内容
+            let usageContent = "";
+            // 思考过程容器元素
+            let thinkingDiv = null;
+            // 回答气泡元素
+            let answerBubble = null;
+            // Token使用量容器元素
+            let usageDiv = null;
+            
+            // 获取聊天容器元素
+            const chatContainer = document.getElementById('chat-container');
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) {
+                    // 答复结束，设置为不再等待答复
+                    isWaitingForResponse = false;
+                    break;
+                }
+                const chunk = decoder.decode(value);
+                const lines = chunk.split('\n');
+                for (let line of lines) {
+                    if (line.trim() === "") continue;
+                    try {
+                        const data = JSON.parse(line.replace('data: ', ''));
+                        if (!data.choices || data.choices.length === 0) {
+                            // 处理 Token 使用量
+                            usageContent = "<div><h2>Token 使用量</h2><pre>" + JSON.stringify(data.usage, null, 2) + "</pre></div>";
+                            if (!usageDiv) {
+                                usageDiv = document.createElement('div');
+                                usageDiv.className = 'token-usage';
+                                chatContainer.appendChild(usageDiv);
+                            }
+                            usageDiv.innerHTML = usageContent;
+                        } else {
+                            const delta = data.choices[0].delta;
+                            if (delta.reasoning_content) {
+                                if (!isReasoningHeaderAdded) {
+                                    reasoningContent += "<div><h2>思考过程</h2>";
+                                    isReasoningHeaderAdded = true;
+                                    thinkingDiv = document.createElement('div');
+                                    thinkingDiv.className = 'thinking-process';
+                                    chatContainer.appendChild(thinkingDiv);
+                                }
+                                reasoningContent += delta.reasoning_content;
+                                thinkingDiv.innerHTML = reasoningContent;
+                            } else {
+                                if (delta.content && !isAnswering) {
+                                    if (isReasoningHeaderAdded) {
+                                        reasoningContent += "</div>";
+                                        thinkingDiv.innerHTML = reasoningContent;
+                                    }
+                                    isAnswering = true;
+                                    answerBubble = document.createElement('div');
+                                    answerBubble.className = 'message-bubble system-message';
+                                    chatContainer.appendChild(answerBubble);
+                                }
+                                if (delta.content) {
+                                    // 将换行符替换为 <br> 标签
+                                    const formattedContent = delta.content.replace(/\n/g, '<br>'); 
+                                    answerContent += formattedContent;
+                                    answerBubble.innerHTML = answerContent;
+                                    systemMessageContent += formattedContent;
+                                }
+                            }
+                        }
+                        // 自动滚动到底部
+                        chatContainer.scrollTop = chatContainer.scrollHeight;
+                    } catch (error) {
+                        console.error('解析数据时出错,请重新输入问题:', error);
+                    }
+                }
+            }
+            if (isReasoningHeaderAdded && !reasoningContent.endsWith('</div>')) {
+                reasoningContent += "</div>";
+                thinkingDiv.innerHTML = reasoningContent;
+            }
+
+            // 将系统回复添加到聊天历史
+            if (systemMessageContent) {
+                // 当 systemMessageContent 不为空时执行以下操作
+                chatHistory.push({ role: 'assistant', content: systemMessageContent });
+                // 使用 push 方法把系统回复对象添加到 chatHistory 数组末尾。
+                // 这个对象包含两个属性：role 为 'assistant'，代表这是系统回复；content 为 systemMessageContent，即系统回复的具体内容。
+
+                // 确保聊天历史记录最多保留 5 条
+                if (chatHistory.length > 5) {
+                    // 检查 chatHistory 数组的长度是否大于 5
+                    chatHistory.shift();
+                    // 若数组长度大于 5，使用 shift 方法移除数组的第一个元素，也就是最早添加的那条记录。
+                }
+            }
+
+            
+        }
+
+        // 添加消息到聊天容器
+        function addMessage(text, sender) {
+            // 获取聊天容器元素
+            const container = document.getElementById('chat-container');
+            // 创建消息气泡元素
+            const bubble = document.createElement('div');
+
+            // 设置消息气泡的类名
+            bubble.className = `message-bubble ${sender}-message`;
+            // 设置消息气泡的内容
+            // bubble.innerHTML = text;
+            bubble.textContent = text;
+
+            // 将消息气泡添加到聊天容器
+            container.appendChild(bubble);
+            // 自动滚动到底部
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // 添加系统消息到聊天容器
+        function addSystemMessage(thinkingProcess, answer, tokenUsage) {
+            // 获取聊天容器元素
+            const container = document.getElementById('chat-container');
+
+            if (thinkingProcess) {
+                // 创建思考过程容器元素
+                const thinkingDiv = document.createElement('div');
+                thinkingDiv.className = 'thinking-process';
+                thinkingDiv.innerHTML = thinkingProcess;
+                // 将思考过程容器元素添加到聊天容器
+                container.appendChild(thinkingDiv);
+            }
+
+            // 创建系统消息气泡元素
+            const bubble = document.createElement('div');
+            bubble.className = 'message-bubble system-message';
+            bubble.innerHTML = answer;
+            // 将系统消息气泡元素添加到聊天容器
+            container.appendChild(bubble);
+
+            if (tokenUsage) {
+                // 创建Token使用量容器元素
+                const usageDiv = document.createElement('div');
+                usageDiv.className = 'token-usage';
+                usageDiv.innerHTML = tokenUsage;
+                // 将Token使用量容器元素添加到聊天容器
+                container.appendChild(usageDiv);
+            }
+
+            // 自动滚动到底部
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // 初始化UEditor时设置精确高度
+        var ue = UE.getEditor('editor', {
+            autoHeightEnabled: false,
+            initialFrameHeight: document.querySelector('.right-panel').clientHeight - 100
+        });
+
+        // 新功能：将左边最新的系统消息复制到右边的编辑器中
+        function copyLatestSystemMessageToEditor() {
+            // 获取聊天容器元素
+            const chatContainer = document.getElementById('chat-container');
+            // 获取所有系统消息元素
+            const systemMessages = chatContainer.querySelectorAll('.system-message');
+            if (systemMessages.length > 0) {
+                // 获取最新的系统消息内容
+                // const latestSystemMessage = systemMessages[systemMessages.length - 1].textContent;
+                const latestSystemMessage = systemMessages[systemMessages.length - 1].innerHTML; 
+                // 将最新的系统消息内容设置到编辑器中
+                UE.getEditor('editor').setContent(latestSystemMessage);
+            }
+        }
+
+        // 处理键盘按下事件
+        function handleKeyDown(event) {
+            if (event.key === 'Enter' && !isWaitingForResponse) {
+                sendMessage();
+            }
+        }
+
+        // 新增函数：复制编辑器内容
+        function copyEditorContent() {
+            const editor = UE.getEditor('editor');
+            const content = editor.getContent();
+            
+            // 使用 Clipboard API 写入 HTML 格式内容
+            if (navigator.clipboard) {
+                const htmlContent = new Blob([content], { type: 'text/html' });
+                navigator.clipboard.write([
+                    new ClipboardItem({
+                        'text/html': htmlContent
+                    })
+                ]).then(() => {
+                    console.log('内容已复制（保留格式）');
+                }).catch(err => {
+                    console.error('复制失败:', err);
+                });
+            } else {
+                // 兼容旧浏览器
+                const tempTextarea = document.createElement('textarea');
+                tempTextarea.value = content;
+                document.body.appendChild(tempTextarea);
+                tempTextarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(tempTextarea);
+            }
+        }
+    </script>
+</body>
+
+</html>
